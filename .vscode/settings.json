@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "supercar_main.h": "c",
+        "pcnt.h": "c",
+        "mcpwm_periph.h": "c",
+        "supercar_motor.h": "c",
+        "freertos.h": "c",
+        "semphr.h": "c",
+        "esp_attr.h": "c",
+        "*.inc": "c"
+    }
+}
