@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "driver/mcpwm.h"
 #include "supercar_motor.h"
+#include "math.h"
 
 
 #define MOTOR_CTRL_MCPWM_UNIT   MCPWM_UNIT_0
@@ -20,12 +21,10 @@ void brushed_motor_init(supercar_motor_control_t* motor_ctrl, mcpwm_timer_t pwm_
     motor_ctrl->direction = MOTOR_RIGHT;
     motor_ctrl->start_flag = false;
     motor_ctrl->start_time = -1;
-    motor_ctrl->cfg.expt_init = 30;
-    motor_ctrl->cfg.expt_max = 50;
-    motor_ctrl->cfg.expt_min = -50;
-    motor_ctrl->cfg.expt_pace = 1.0;
+   
+    motor_ctrl->cfg.acceleration = 1.0f;
     motor_ctrl->cfg.ctrl_period = 10;
-    motor_ctrl->cfg.pwm_freq = 1000;
+    motor_ctrl->cfg.pwm_freq = 20000;
     motor_ctrl->cfg.pwm_unit = MOTOR_CTRL_MCPWM_UNIT;
     motor_ctrl->cfg.pwm_timer = pwm_timer;
     motor_ctrl->cfg.pwm_signal = pwm_signal;
@@ -44,12 +43,23 @@ static void brushed_motor_ctrl_thread(void *arg){
     ESP_LOGD(TAG, "Initializing motor [%s]", motor->name);
     while (1) {
         xSemaphoreTake(motor->mutex, portMAX_DELAY);
-        if(motor->start_flag){
-            if(motor->expt != motor->duty_cycle){
-                ESP_LOGD(TAG, "Duty cycle [%s] different than expt: expt %f -> duty %f", motor->name, motor->expt, motor->duty_cycle);
-                brushed_motor_set_duty(motor, motor->expt);
+        if(motor->expt != motor->duty_cycle){
+            float delta = motor->expt - motor->duty_cycle;
+            float acc = motor->cfg.acceleration;
+            float new_duty = motor->duty_cycle;
+            if(fabs(delta) > acc){
+                if(delta > 0)
+                    new_duty += acc;
+                else 
+                    new_duty -= acc;
+            }else{
+                new_duty = motor->expt;
             }
-            motor->start_time += motor->cfg.ctrl_period;
+            ESP_LOGD(TAG, "Duty cycle [%s] expt %f : %f -> %f", motor->name, motor->expt, motor->duty_cycle, new_duty);
+            brushed_motor_set_duty(motor, new_duty);
+        }
+        if(motor->start_flag){
+            motor->start_time += motor->cfg.ctrl_period; 
         }
         xSemaphoreGive(motor->mutex);
         vTaskDelay(motor->cfg.ctrl_period / portTICK_PERIOD_MS);
@@ -61,7 +71,7 @@ void brushed_motor_setup(supercar_motor_control_t* motor_ctrl){
     ESP_LOGD(TAG, "Setting up motor [%s]", motor_ctrl->name);
     /** MCPWM initialization */
     mcpwm_config_t pwm_config;
-    pwm_config.frequency = motor_ctrl->cfg.pwm_freq;     //frequency = 1kHz,
+    pwm_config.frequency = motor_ctrl->cfg.pwm_freq;     //frequency
     pwm_config.cmpr_a = 0;                              //initial duty cycle of PWMxA = 0
     pwm_config.cmpr_b = 0;                              //initial duty cycle of PWMxb = 0
     pwm_config.counter_mode = MCPWM_UP_COUNTER;         //up counting mode
@@ -130,6 +140,5 @@ void brushed_motor_stop(supercar_motor_control_t *mc){
     mc->expt = 0;
     mc->start_time = 0;
     mc->start_flag = false;
-    brushed_motor_set_duty(mc, 0);
 }
 

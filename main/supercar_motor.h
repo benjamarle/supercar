@@ -24,15 +24,10 @@ typedef struct {
     const char* name;
     /* Configurations */
     struct {
-        /* Expectation configuration */
-        float expt_init;                     // Initial expectation
-        float expt_max;                      // Max expectation in dynamic mode
-        float expt_min;                      // Min expectation in dynamic mode
-        float expt_pace;                     // The expection pace. It can change expectation wave period
-
-        /* Other configurations */
+        float acceleration;         // Maximum delta per control period
         unsigned int ctrl_period;            // Control period
         unsigned int pwm_freq;               // MCPWM output frequency
+        /* MCPWM Configuration */
         mcpwm_unit_t pwm_unit;
         mcpwm_timer_t pwm_timer;
         mcpwm_io_signals_t pwm_signal;
