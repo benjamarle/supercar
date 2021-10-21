@@ -19,14 +19,18 @@ extern "C" {
 
 /** Outputs **/
 // Propulsion motor control pins
-#define GPIO_PWM_PROPULSION_OUT 25   //Set GPIO 15 as PWM0A
-#define GPIO_DIR_PROPULSION_OUT 26
+#define GPIO_PWM_PROPULSION_OUT 21   //Set GPIO 15 as PWM0A
+#define GPIO_DIR_PROPULSION_OUT 17
 // Steering motor control pins
-#define GPIO_PWM_STEERING_OUT 32
-#define GPIO_DIR_STEERING_OUT 33
+#define GPIO_PWM_STEERING_OUT 19
+#define GPIO_DIR_STEERING_OUT 18
 /** Inputs **/
-#define GPIO_ACCELERATOR_FWD_IN 27
-#define GPIO_ACCELERATOR_BWD_IN 28
+#define GPIO_ACCELERATOR_FWD_IN 14
+#define GPIO_ACCELERATOR_BWD_IN 12
+
+#define GPIO_MODE_SELECTOR_IN 13
+#define GPIO_POWER_OUT 0
+#define GPIO_MODE_SELECTOR_OUT 4
 
 
 #define MOTOR_CTRL_MCPWM_TIMER  MCPWM_TIMER_0
@@ -54,11 +58,15 @@ typedef enum {
 } supercar_steer_t;
 
 typedef struct {
+    bool power;
     supercar_motor_control_t propulsion_motor_ctrl;
     supercar_motor_control_t steering_motor_ctrl;
     supercar_mode_t mode;
     supercar_direction_t direction;
     supercar_control_type_t control_type;
+    supercar_steer_t steering;
+    bool reverse_direction;
+    bool reverse_mode;
 
     /* Handles */
     QueueHandle_t button_events;
@@ -66,6 +74,9 @@ typedef struct {
 
     struct {
         int max_speed;
+        int mode_input_pin;
+        int mode_output_pin;
+        int power_output_pin;
     } cfg;
 
 } supercar_t;
@@ -74,15 +85,29 @@ void supercar_init(supercar_t* car);
 
 void supercar_setup(supercar_t* car);
 
+void supercar_power(supercar_t* car, bool power);
+
 void supercar_start(supercar_t* car);
 
 void supercar_stop(supercar_t* car);
+
+void supercar_toggle_mode(supercar_t* car);
+
+void supercar_toggle_direction(supercar_t* car);
+
+void supercar_reverse_mode(supercar_t* car);
 
 void supercar_reverse(supercar_t* car);
 
 void supercar_turn(supercar_t* car, supercar_steer_t turn);
 
+supercar_direction_t supercar_get_direction(supercar_t* car);
+
 void supercar_set_direction(supercar_t* car, supercar_direction_t direction);
+
+supercar_mode_t supercar_get_mode(supercar_t* car);
+
+void supercar_set_mode(supercar_t* car, supercar_mode_t mode);
 
 void supercar_throttle(supercar_t* car, float speed);
 
