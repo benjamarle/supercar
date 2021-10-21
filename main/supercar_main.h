@@ -111,13 +111,6 @@ void supercar_set_mode(supercar_t* car, supercar_mode_t mode);
 
 void supercar_throttle(supercar_t* car, float speed);
 
-/**
- * @brief Initialize the motor control console
- *
- * @param motor_ctrl The top infomation struct of this example
- */
-extern void cmd_mcpwm_motor_init(supercar_motor_control_t *motor_ctrl);
-
 #ifdef __cplusplus
 }
 #endif

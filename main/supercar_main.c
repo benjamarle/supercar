@@ -275,9 +275,6 @@ void app_main(void)
     /* Initialize peripherals and modules */
     supercar_init(&supercar);
     supercar_setup(&supercar);
-
-    /* Initialize the console */
-    cmd_mcpwm_motor_init(&(supercar.propulsion_motor_ctrl));
     
     /* Motor expectation wave generate thread */
     xTaskCreate(supercar_input_thread, "supercar_input_thread", 4096, NULL, 5, NULL);

@@ -1,5 +1,4 @@
 set(COMPONENT_SRCS  "supercar_main.c"
-                    "cmd_mcpwm_motor.c"
                     "esp_hid_gap.c"
                     "esp_hid_host.c")
 
