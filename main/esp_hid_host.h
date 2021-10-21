@@ -24,8 +24,6 @@ typedef enum {
    DPAD_LEFT,
    DPAD_UP_LEFT
 } dpad_input_t;
-
-
 typedef struct {
    uint16_t lx;
    uint16_t ly;
@@ -49,7 +47,10 @@ typedef struct {
    uint8_t extra;
 } xbox_input_report_t;
 
-
+typedef struct {
+   xbox_input_report_t report;
+   esp_hidh_event_t type;
+} xbox_input_event_t;
 
 void hidh_callback(void *handler_args, esp_event_base_t base, int32_t id, void *event_data);
 

@@ -31,17 +31,18 @@
 
 static const char *TAG = "ESP_HIDH";
 
-
-supercar_t* car;
-
 const char *dpad_input_names[] = { "none", "up", "up-right", "right", "down-right", "down","down-left","left","up-left" };
-
 
 void hidh_callback(void *handler_args, esp_event_base_t base, int32_t id, void *event_data)
 {
+    supercar_t* car = (supercar_t*)handler_args;
     esp_hidh_event_t event = (esp_hidh_event_t)id;
     esp_hidh_event_data_t *param = (esp_hidh_event_data_t *)event_data;
     
+    xbox_input_event_t xbox_event = {
+        .report = {0},
+        .type = event
+    };
 
     switch (event) {
     case ESP_HIDH_OPEN_EVENT: {
@@ -55,16 +56,16 @@ void hidh_callback(void *handler_args, esp_event_base_t base, int32_t id, void *
         break;
     }
     case ESP_HIDH_BATTERY_EVENT: {
-        const uint8_t *bda = esp_hidh_dev_bda_get(param->battery.dev);
+        //const uint8_t *bda = esp_hidh_dev_bda_get(param->battery.dev);
         //ESP_LOGI(TAG, ESP_BD_ADDR_STR " BATTERY: %d%%", ESP_BD_ADDR_HEX(bda), param->battery.level);
         break;
     }
     case ESP_HIDH_INPUT_EVENT: {
         const uint8_t *bda = esp_hidh_dev_bda_get(param->input.dev);
-        ESP_LOGI(TAG, ESP_BD_ADDR_STR " INPUT: %8s, MAP: %2u, ID: %3u, Len: %d, Data:", ESP_BD_ADDR_HEX(bda), esp_hid_usage_str(param->input.usage), param->input.map_index, param->input.report_id, param->input.length);
+        ESP_LOGV(TAG, ESP_BD_ADDR_STR " INPUT: %8s, MAP: %2u, ID: %3u, Len: %d, Data:", ESP_BD_ADDR_HEX(bda), esp_hid_usage_str(param->input.usage), param->input.map_index, param->input.report_id, param->input.length);
         if(param->input.report_id == 1 && param->input.length == 15){
             xbox_input_report_t* xbox = (xbox_input_report_t*) param->input.data;
-            char* buttons = calloc(64, sizeof(char));
+            /*char* buttons = calloc(64, sizeof(char));
             strcat(buttons, "[");
             if(xbox->a){
                 strcat(buttons, "a");
@@ -93,10 +94,10 @@ void hidh_callback(void *handler_args, esp_event_base_t base, int32_t id, void *
             strcat(buttons, "]");
             ESP_LOGI(TAG, "LX : %d, LY : %d, RX : %d, RY : %d, RT : %d, LT : %d, DPad : %s, Buttons : %s\n", 
                 xbox->lx, xbox->ly, xbox->rx, xbox->ry, xbox->rt, xbox->lt, dpad_input_names[xbox->dpad], buttons);
-            free(buttons);
-            xQueueSend(car->remote_events, xbox, 100 / portTICK_PERIOD_MS);
+            free(buttons);*/
+            xbox_event.report = *xbox;
         }else{
-            ESP_LOG_BUFFER_HEX(TAG, param->input.data, param->input.length);
+            //ESP_LOG_BUFFER_HEX(TAG, param->input.data, param->input.length);
         }
         break;
     }
@@ -117,13 +118,13 @@ void hidh_callback(void *handler_args, esp_event_base_t base, int32_t id, void *
         ESP_LOGI(TAG, "EVENT: %d", event);
         break;
     }
+    xQueueSend(car->remote_events, &xbox_event, 100 / portTICK_PERIOD_MS);
 }
 
 #define SCAN_DURATION_SECONDS 5
 
 void hid_task(void* param)
 {
-    car = (supercar_t*) param;
     size_t results_len = 0;
     esp_hid_scan_result_t *results = NULL;
     ESP_LOGI(TAG, "SCAN...");
@@ -189,7 +190,7 @@ void init_hid_host(supercar_t* car)
     esp_hidh_config_t config = {
         .callback = hidh_callback,
         .event_stack_size = 4096,
-        .callback_arg = NULL,
+        .callback_arg = car,
     };
     ESP_ERROR_CHECK( esp_hidh_init(&config) );
 
