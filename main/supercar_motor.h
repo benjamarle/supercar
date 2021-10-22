@@ -41,15 +41,6 @@ void brushed_motor_init(supercar_motor_control_t* motor_ctrl, mcpwm_timer_t pwm_
 
 void brushed_motor_setup(supercar_motor_control_t* motor_ctrl);
 
-/**
- * @brief Set pwm duty to drive the motor
- *
- * @param duty_cycle PWM duty cycle (100~-100), the motor will go backward if the duty is set to a negative value
- */
-void brushed_motor_set_duty(supercar_motor_control_t* motor_ctrl, float duty_cycle);
-
-void brushed_motor_set_direction(supercar_motor_control_t* motor_ctrl, motor_direction_t direction);
-
 void brushed_motor_set_speed(supercar_motor_control_t* motor_ctrl, float speed);
 
 /**

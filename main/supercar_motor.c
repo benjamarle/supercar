@@ -33,6 +33,32 @@ void brushed_motor_init(supercar_motor_control_t* motor_ctrl, mcpwm_timer_t pwm_
     motor_ctrl->mutex = xSemaphoreCreateMutex();
 }
 
+
+/**
+ * @brief Set pwm duty to drive the motor
+ *
+ * @param duty_cycle PWM duty cycle (100~-100), the motor will go backward if the duty is set to a negative value
+ */
+static void brushed_motor_set_duty(supercar_motor_control_t* motor_ctrl, float duty_cycle)
+{
+    ESP_LOGD(TAG, "Duty cycle [%s] : %f", motor_ctrl->name, duty_cycle);
+    motor_ctrl->duty_cycle = duty_cycle;
+    if(duty_cycle){
+        if(duty_cycle < 0)
+            duty_cycle = -duty_cycle;
+        mcpwm_set_duty(motor_ctrl->cfg.pwm_unit, motor_ctrl->cfg.pwm_timer, MCPWM_OPR_A, duty_cycle);
+        mcpwm_set_duty_type(motor_ctrl->cfg.pwm_unit, motor_ctrl->cfg.pwm_timer, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);  //call this each time, if operator was previously in low/high state
+    }else{
+        mcpwm_set_signal_low(motor_ctrl->cfg.pwm_unit, motor_ctrl->cfg.pwm_timer, MCPWM_OPR_A);
+    }
+}
+
+static void brushed_motor_set_direction(supercar_motor_control_t* motor_ctrl, motor_direction_t direction){
+    ESP_LOGD(TAG, "Direction [%s] : %s", motor_ctrl->name, direction == MOTOR_RIGHT ? "RIGHT" : "LEFT");
+    motor_ctrl->direction = direction;
+    gpio_set_level(motor_ctrl->cfg.direction_pin, direction);
+}
+
 /**
  * @brief Motor control thread
  *
@@ -56,6 +82,12 @@ static void brushed_motor_ctrl_thread(void *arg){
                 new_duty = motor->expt;
             }
             ESP_LOGD(TAG, "Duty cycle [%s] expt %f : %f -> %f", motor->name, motor->expt, motor->duty_cycle, new_duty);
+            motor_direction_t new_direction = new_duty > 0 ? MOTOR_RIGHT : MOTOR_LEFT;
+
+            if(new_direction != motor->direction){
+                brushed_motor_set_direction(motor, new_direction);
+            }
+
             brushed_motor_set_duty(motor, new_duty);
         }
         if(motor->start_flag){
@@ -90,29 +122,6 @@ void brushed_motor_setup(supercar_motor_control_t* motor_ctrl){
     gpio_set_level(motor_ctrl->cfg.direction_pin, 0);
     /* Motor control thread */
     xTaskCreatePinnedToCore(brushed_motor_ctrl_thread, "mcpwm_brushed_motor_ctrl_thread", 4096, motor_ctrl, 3, NULL, 1);
-}
-
-/**
- * @brief set motor moves speed and direction with duty cycle = duty %
- */
-void brushed_motor_set_duty(supercar_motor_control_t* motor_ctrl, float duty_cycle)
-{
-    ESP_LOGD(TAG, "Duty cycle [%s] : %f", motor_ctrl->name, duty_cycle);
-    if(duty_cycle){
-        if(duty_cycle < 0)
-            duty_cycle = -duty_cycle;
-        mcpwm_set_duty(motor_ctrl->cfg.pwm_unit, motor_ctrl->cfg.pwm_timer, MCPWM_OPR_A, duty_cycle);
-        mcpwm_set_duty_type(motor_ctrl->cfg.pwm_unit, motor_ctrl->cfg.pwm_timer, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);  //call this each time, if operator was previously in low/high state
-    }else{
-        mcpwm_set_signal_low(motor_ctrl->cfg.pwm_unit, motor_ctrl->cfg.pwm_timer, MCPWM_OPR_A);
-    }
-    motor_ctrl->duty_cycle = duty_cycle;
-}
-
-void brushed_motor_set_direction(supercar_motor_control_t* motor_ctrl, motor_direction_t direction){
-    ESP_LOGD(TAG, "Direction [%s] : %s", motor_ctrl->name, direction == MOTOR_RIGHT ? "RIGHT" : "LEFT");
-    motor_ctrl->direction = direction;
-    gpio_set_level(motor_ctrl->cfg.direction_pin, direction);
 }
 
 void brushed_motor_set_speed(supercar_motor_control_t* motor_ctrl, float speed){
