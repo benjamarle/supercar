@@ -46,7 +46,8 @@ static void supercar_input_thread(void *arg)
             if(supercar.control_type == LOCAL){
                 if (ev.pin == GPIO_ACCELERATOR_FWD_IN || ev.pin == GPIO_ACCELERATOR_BWD_IN) {
                     if(ev.event == BUTTON_DOWN){
-                        supercar_set_direction(&supercar, ev.pin == GPIO_ACCELERATOR_FWD_IN ? FORWARD : BACKWARD);
+                        supercar_set_direction(&supercar, ev.pin == GPIO_ACCELERATOR_FWD_IN ? 
+                        (supercar.reverse_direction ? BACKWARD : FORWARD) : (supercar.reverse_direction ? BACKWARD : FORWARD));
                         supercar_start(&supercar);
                     }
                     if(ev.event == BUTTON_UP){
@@ -207,9 +208,10 @@ void supercar_turn(supercar_t* car, supercar_steer_t turn){
         brushed_motor_set_speed(steering, 0);
         brushed_motor_stop(steering);
     }else{
-        brushed_motor_set_speed(steering, STEERING_SPEED);
+        float steering_speed = turn == STEER_RIGHT ? STEERING_SPEED : -STEERING_SPEED;
+        brushed_motor_set_speed(steering, steering_speed);
         brushed_motor_start(steering);
-        brushed_motor_set_direction(steering, turn == STEER_RIGHT ? MOTOR_RIGHT : MOTOR_LEFT);
+     
     }
     xSemaphoreGive(steering->mutex);
 }
@@ -226,7 +228,12 @@ void supercar_set_direction(supercar_t* car, supercar_direction_t direction){
     car->direction = direction;
     supercar_direction_t new_direction = supercar_get_direction(car);
     ESP_LOGD(TAG, "Setting direction: %s", new_direction == FORWARD ? "FORWARD" : "BACKWARD");
-    brushed_motor_set_direction(propulsion, new_direction == FORWARD ? MOTOR_RIGHT : MOTOR_LEFT);
+    if(propulsion->start_flag){
+        if((propulsion->expt < 0 && new_direction == FORWARD) 
+        || (propulsion->expt > 0 && new_direction == BACKWARD)){
+            brushed_motor_set_speed(propulsion, -propulsion->expt);
+        }
+    }
     xSemaphoreGive(propulsion->mutex);
 }
 
@@ -246,7 +253,7 @@ void supercar_set_mode(supercar_t* car, supercar_mode_t mode){
 void supercar_throttle(supercar_t* car, float speed){
     supercar_motor_control_t* propulsion = &car->propulsion_motor_ctrl;
     xSemaphoreTake(propulsion->mutex, portMAX_DELAY);
-    brushed_motor_set_speed(propulsion, speed);
+    brushed_motor_set_speed(propulsion, car->direction == FORWARD ? speed : -speed);
     if(!propulsion->start_flag)
         brushed_motor_start(propulsion);
     xSemaphoreGive(propulsion->mutex);
@@ -261,7 +268,6 @@ void supercar_stop(supercar_t* car){
     ESP_LOGD(TAG, "Car stopping");
     supercar_motor_control_t* propulsion = &car->propulsion_motor_ctrl;
     xSemaphoreTake(propulsion->mutex, portMAX_DELAY);
-    brushed_motor_set_speed(propulsion, 0);
     brushed_motor_stop(propulsion);
     xSemaphoreGive(propulsion->mutex);
 }
