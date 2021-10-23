@@ -173,6 +173,7 @@ void supercar_init(supercar_t* car){
     car->steering = STEER_NONE;
     car->propulsion_motor_ctrl.name = PROPULSION_MOTOR_NAME;
     car->steering_motor_ctrl.name = STEERING_MOTOR_NAME;
+    car->steering_motor_ctrl.cfg.acceleration = 2.f;
     car->cfg.max_speed = 50;
     car->cfg.delta_speed = 10;
     car->cfg.mode_input_pin = GPIO_MODE_SELECTOR_IN;
@@ -180,6 +181,7 @@ void supercar_init(supercar_t* car){
     car->cfg.power_output_pin = GPIO_POWER_OUT;
     car->reverse_direction = false;
     car->reverse_mode = false;
+    car->running = false;
     brushed_motor_init(&car->propulsion_motor_ctrl, MCPWM_TIMER_0, MCPWM0A, GPIO_PWM_PROPULSION_OUT, GPIO_DIR_PROPULSION_OUT);
     brushed_motor_init(&car->steering_motor_ctrl, MCPWM_TIMER_1, MCPWM1A, GPIO_PWM_STEERING_OUT, GPIO_DIR_STEERING_OUT);
 
@@ -196,6 +198,8 @@ void supercar_init(supercar_t* car){
     gpio_config(&config_output);
     gpio_set_level(car->cfg.mode_output_pin, 1);
     gpio_set_level(car->cfg.power_output_pin, 1);
+
+    supercar_set_mode(car, gpio_get_level(car->cfg.mode_input_pin) ? MOTION : SWAY);
 
     supercar_power(car, true);
 }
@@ -285,21 +289,27 @@ void supercar_throttle(supercar_t* car, float speed){
     supercar_motor_control_t* propulsion = &car->propulsion_motor_ctrl;
     xSemaphoreTake(propulsion->mutex, portMAX_DELAY);
     brushed_motor_set_speed(propulsion, car->direction == FORWARD ? speed : -speed);
-    if(!propulsion->start_flag)
+    if(!car->running && speed > 0){
+        ESP_LOGD(TAG, "Car running");
+        car->running = true;
         brushed_motor_start(propulsion);
+    }
     xSemaphoreGive(propulsion->mutex);
 }
 
 void supercar_start(supercar_t* car){
-    ESP_LOGD(TAG, "Car starting up");
+    ESP_LOGD(TAG, "Car starting up...");
     supercar_throttle(car, car->cfg.max_speed);
 }
 
-void supercar_stop(supercar_t* car){
-    ESP_LOGD(TAG, "Car stopping");
+void supercar_stop(supercar_t* car){ 
     supercar_motor_control_t* propulsion = &car->propulsion_motor_ctrl;
     xSemaphoreTake(propulsion->mutex, portMAX_DELAY);
-    brushed_motor_stop(propulsion);
+    if(car->running){
+        ESP_LOGD(TAG, "Car stopping");
+        car->running = false;
+        brushed_motor_stop(propulsion);
+    }
     xSemaphoreGive(propulsion->mutex);
 }
 
@@ -308,7 +318,7 @@ void supercar_set_max_speed(supercar_t* car, int max_speed){
     int old_max_speed = car->cfg.max_speed;
     car->cfg.max_speed = max(0, min(max_speed, 100));
     ESP_LOGD(TAG, "Car setting up new max speed : %d -> %d", old_max_speed, car->cfg.max_speed);
-    if(car->propulsion_motor_ctrl.start_flag){
+    if(car->running){
         supercar_throttle(car, car->cfg.max_speed);
     }
 }

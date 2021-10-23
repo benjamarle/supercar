@@ -24,6 +24,7 @@ extern "C" {
 // Steering motor control pins
 #define GPIO_PWM_STEERING_OUT 19
 #define GPIO_DIR_STEERING_OUT 18
+
 /** Inputs **/
 #define GPIO_ACCELERATOR_FWD_IN 12
 #define GPIO_ACCELERATOR_BWD_IN 14
@@ -67,6 +68,7 @@ typedef struct {
     supercar_steer_t steering;
     bool reverse_direction;
     bool reverse_mode;
+    bool running;
 
     /* Handles */
     QueueHandle_t button_events;
