@@ -38,7 +38,6 @@
 #define max(a,b) (((a) > (b)) ? (a) : (b))
 #endif
 
-/* The global infomation structure */
 static supercar_t supercar;
 
 const char* PROPULSION_MOTOR_NAME = "PROPULSION";
@@ -51,6 +50,7 @@ static void supercar_input_thread(void *arg)
     button_event_t ev;
     while (1) {
         if (xQueueReceive(supercar.button_events, &ev, 1000/portTICK_PERIOD_MS)) {
+            xSemaphoreTake(supercar.mutex, portMAX_DELAY);
             /* Accelerator */
             if(supercar.control_type == LOCAL){
                 if (ev.pin == GPIO_ACCELERATOR_FWD_IN || ev.pin == GPIO_ACCELERATOR_BWD_IN) {
@@ -63,16 +63,18 @@ static void supercar_input_thread(void *arg)
                         supercar_stop(&supercar);
                     }
                 }
-            }
+            
 
-            if(ev.pin == GPIO_MODE_SELECTOR_IN){
-                if(ev.event == BUTTON_DOWN){
-                    // Sway
-                    supercar_set_mode(&supercar, SWAY);
-                }else{
-                    supercar_set_mode(&supercar, MOTION);
+                if(ev.pin == GPIO_MODE_SELECTOR_IN){
+                    if(ev.event == BUTTON_DOWN){
+                        // Sway
+                        supercar_set_mode(&supercar, SWAY);
+                    }else{
+                        supercar_set_mode(&supercar, MOTION);
+                    }
                 }
             }
+            xSemaphoreGive(supercar.mutex);
         }
     }
 }
@@ -87,8 +89,14 @@ static void supercar_decrease_max_speed(supercar_t* car){
     supercar_set_max_speed(car, car->cfg.max_speed - car->cfg.delta_speed);
 }
 
-static void supercar_toggle_control_mode(supercar_t* car){
-    supercar.control_type = supercar.control_type == LOCAL ? REMOTE : LOCAL;
+static void supercar_set_control_type(supercar_t* car, supercar_control_type_t control_type){
+    supercar.control_type = control_type;
+    if(control_type == LOCAL)
+        supercar_read_mode(car);
+}
+
+static void supercar_toggle_control_type(supercar_t* car){
+    supercar_set_control_type(car, car->control_type == LOCAL ? REMOTE : LOCAL);
     ESP_LOGI(TAG, "Toggling control mode to %s", supercar.control_type == LOCAL ?  "LOCAL" : "REMOTE");
 }
 
@@ -99,23 +107,25 @@ static void supercar_remote_input_thread(void *arg)
 
     while (1) {
         if (xQueueReceive(supercar.remote_events, &ev, 1000/portTICK_PERIOD_MS)) {
+            if(ev.type != ESP_HIDH_INPUT_EVENT)
+                continue;
 
+
+            xSemaphoreTake(supercar.mutex, portMAX_DELAY);
             if(ev.type == ESP_HIDH_CLOSE_EVENT){
                 ESP_LOGI(TAG, "Gamepad disconnected, stopping car…");
                 supercar_turn(&supercar, STEER_NONE);
                 supercar_stop(&supercar);
-                supercar.control_type = LOCAL;
+                supercar_set_mode(&supercar, LOCAL);
+                xSemaphoreGive(supercar.mutex);
                 continue;
             }
-
-            if(ev.type != ESP_HIDH_INPUT_EVENT)
-                continue;
 
             xbox_input_report_t xbox = ev.report;
             xbox_input_report_t old_xbox = old_ev.report;
                 
             if(DEBOUNCE(y, 1)){
-                supercar_toggle_control_mode(&supercar);
+                supercar_toggle_control_type(&supercar);
             }
             if(DEBOUNCE(b, 1)){
                 supercar_reverse(&supercar);
@@ -160,8 +170,13 @@ static void supercar_remote_input_thread(void *arg)
                 supercar_stop(&supercar);
             }
             old_ev = ev;
+            xSemaphoreGive(supercar.mutex);
         }
     }
+}
+
+static void supercar_read_mode(supercar_t* car){
+    supercar_set_mode(car, gpio_get_level(car->cfg.mode_input_pin) ? MOTION : SWAY);
 }
 
 void supercar_init(supercar_t* car){
@@ -173,7 +188,6 @@ void supercar_init(supercar_t* car){
     car->steering = STEER_NONE;
     car->propulsion_motor_ctrl.name = PROPULSION_MOTOR_NAME;
     car->steering_motor_ctrl.name = STEERING_MOTOR_NAME;
-    car->steering_motor_ctrl.cfg.acceleration = 2.f;
     car->cfg.max_speed = 50;
     car->cfg.delta_speed = 10;
     car->cfg.mode_input_pin = GPIO_MODE_SELECTOR_IN;
@@ -182,8 +196,12 @@ void supercar_init(supercar_t* car){
     car->reverse_direction = false;
     car->reverse_mode = false;
     car->running = false;
+    car->mutex = xSemaphoreCreateMutex();
+
     brushed_motor_init(&car->propulsion_motor_ctrl, MCPWM_TIMER_0, MCPWM0A, GPIO_PWM_PROPULSION_OUT, GPIO_DIR_PROPULSION_OUT);
     brushed_motor_init(&car->steering_motor_ctrl, MCPWM_TIMER_1, MCPWM1A, GPIO_PWM_STEERING_OUT, GPIO_DIR_STEERING_OUT);
+
+    car->steering_motor_ctrl.cfg.acceleration = 2.0f;
 
     car->button_events = pulled_button_init(PIN_BIT(GPIO_ACCELERATOR_FWD_IN) | PIN_BIT(GPIO_ACCELERATOR_BWD_IN) | PIN_BIT(GPIO_MODE_SELECTOR_IN), GPIO_PULLUP_ONLY);
     car->remote_events = xQueueCreate(10, sizeof(xbox_input_event_t));
@@ -199,7 +217,7 @@ void supercar_init(supercar_t* car){
     gpio_set_level(car->cfg.mode_output_pin, 1);
     gpio_set_level(car->cfg.power_output_pin, 1);
 
-    supercar_set_mode(car, gpio_get_level(car->cfg.mode_input_pin) ? MOTION : SWAY);
+    supercar_read_mode(car);
 
     supercar_power(car, true);
 }
@@ -232,12 +250,21 @@ void supercar_reverse_mode(supercar_t* car){
 void supercar_reverse(supercar_t* car){
     ESP_LOGD(TAG, "Car toggling direction");
     car->reverse_direction = !car->reverse_direction;
+    bool was_running = false;
+    if(car->running){
+        was_running = true;
+        supercar_stop(car);
+    }
     supercar_set_direction(car, car->direction);
+
+    if(was_running ){
+        supercar_start(car);
+    }
 }
 
 void supercar_turn(supercar_t* car, supercar_steer_t turn){
     supercar_motor_control_t* steering = &car->steering_motor_ctrl;
-    xSemaphoreTake(steering->mutex, portMAX_DELAY);
+    
     car->steering = turn;
     if(turn == STEER_NONE){
         brushed_motor_set_speed(steering, 0);
@@ -248,7 +275,6 @@ void supercar_turn(supercar_t* car, supercar_steer_t turn){
         brushed_motor_start(steering);
      
     }
-    xSemaphoreGive(steering->mutex);
 }
 
 supercar_direction_t supercar_get_direction(supercar_t* car){
@@ -259,7 +285,6 @@ supercar_direction_t supercar_get_direction(supercar_t* car){
 
 void supercar_set_direction(supercar_t* car, supercar_direction_t direction){
     supercar_motor_control_t* propulsion = &car->propulsion_motor_ctrl;
-    xSemaphoreTake(propulsion->mutex, portMAX_DELAY);
     car->direction = direction;
     supercar_direction_t new_direction = supercar_get_direction(car);
     ESP_LOGD(TAG, "Setting direction: %s", new_direction == FORWARD ? "FORWARD" : "BACKWARD");
@@ -269,7 +294,7 @@ void supercar_set_direction(supercar_t* car, supercar_direction_t direction){
             brushed_motor_set_speed(propulsion, -propulsion->expt);
         }
     }
-    xSemaphoreGive(propulsion->mutex);
+    
 }
 
 supercar_mode_t supercar_get_mode(supercar_t* car){
@@ -287,14 +312,12 @@ void supercar_set_mode(supercar_t* car, supercar_mode_t mode){
 
 void supercar_throttle(supercar_t* car, float speed){
     supercar_motor_control_t* propulsion = &car->propulsion_motor_ctrl;
-    xSemaphoreTake(propulsion->mutex, portMAX_DELAY);
     brushed_motor_set_speed(propulsion, car->direction == FORWARD ? speed : -speed);
     if(!car->running && speed > 0){
         ESP_LOGD(TAG, "Car running");
         car->running = true;
         brushed_motor_start(propulsion);
     }
-    xSemaphoreGive(propulsion->mutex);
 }
 
 void supercar_start(supercar_t* car){
@@ -304,13 +327,11 @@ void supercar_start(supercar_t* car){
 
 void supercar_stop(supercar_t* car){ 
     supercar_motor_control_t* propulsion = &car->propulsion_motor_ctrl;
-    xSemaphoreTake(propulsion->mutex, portMAX_DELAY);
     if(car->running){
         ESP_LOGD(TAG, "Car stopping");
         car->running = false;
         brushed_motor_stop(propulsion);
     }
-    xSemaphoreGive(propulsion->mutex);
 }
 
 

@@ -70,6 +70,8 @@ typedef struct {
     bool reverse_mode;
     bool running;
 
+    SemaphoreHandle_t mutex;
+
     /* Handles */
     QueueHandle_t button_events;
     QueueHandle_t remote_events;
