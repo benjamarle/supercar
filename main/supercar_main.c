@@ -89,6 +89,10 @@ static void supercar_decrease_max_speed(supercar_t* car){
     supercar_set_max_speed(car, car->cfg.max_speed - car->cfg.delta_speed);
 }
 
+static void supercar_read_mode(supercar_t* car){
+    supercar_set_mode(car, gpio_get_level(car->cfg.mode_input_pin) ? MOTION : SWAY);
+}
+
 static void supercar_set_control_type(supercar_t* car, supercar_control_type_t control_type){
     supercar.control_type = control_type;
     if(control_type == LOCAL)
@@ -173,10 +177,6 @@ static void supercar_remote_input_thread(void *arg)
             xSemaphoreGive(supercar.mutex);
         }
     }
-}
-
-static void supercar_read_mode(supercar_t* car){
-    supercar_set_mode(car, gpio_get_level(car->cfg.mode_input_pin) ? MOTION : SWAY);
 }
 
 void supercar_init(supercar_t* car){
