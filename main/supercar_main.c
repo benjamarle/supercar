@@ -28,6 +28,15 @@
 #include "esp_hid_host.h"
 #include "button.h"
 #include "supercar_motor.h"
+#include "math.h"
+
+#ifndef min
+#define min(a,b) (((a) < (b)) ? (a) : (b))
+#endif
+
+#ifndef max
+#define max(a,b) (((a) > (b)) ? (a) : (b))
+#endif
 
 /* The global infomation structure */
 static supercar_t supercar;
@@ -70,6 +79,19 @@ static void supercar_input_thread(void *arg)
 
 #define DEBOUNCE(var, val) (old_xbox.var != xbox.var && xbox.var == val)
 
+static void supercar_increase_max_speed(supercar_t* car){
+    supercar_set_max_speed(car, car->cfg.max_speed + car->cfg.delta_speed);
+}
+
+static void supercar_decrease_max_speed(supercar_t* car){
+    supercar_set_max_speed(car, car->cfg.max_speed - car->cfg.delta_speed);
+}
+
+static void supercar_toggle_control_mode(supercar_t* car){
+    supercar.control_type = supercar.control_type == LOCAL ? REMOTE : LOCAL;
+    ESP_LOGI(TAG, "Toggling control mode to %s", supercar.control_type == LOCAL ?  "LOCAL" : "REMOTE");
+}
+
 static void supercar_remote_input_thread(void *arg)
 {
     xbox_input_event_t old_ev = {0};
@@ -93,7 +115,7 @@ static void supercar_remote_input_thread(void *arg)
             xbox_input_report_t old_xbox = old_ev.report;
                 
             if(DEBOUNCE(y, 1)){
-                supercar.control_type = supercar.control_type == LOCAL ? REMOTE : LOCAL;
+                supercar_toggle_control_mode(&supercar);
             }
             if(DEBOUNCE(b, 1)){
                 supercar_reverse(&supercar);
@@ -121,6 +143,14 @@ static void supercar_remote_input_thread(void *arg)
                 supercar_turn(&supercar, STEER_RIGHT);
             }
 
+            if(DEBOUNCE(lb, 1)){
+                supercar_decrease_max_speed(&supercar);
+            }
+
+            if(DEBOUNCE(rb, 1)){
+                supercar_increase_max_speed(&supercar);
+            }
+
             if(xbox.dpad == DPAD_NONE && supercar.steering != STEER_NONE){
                 supercar_turn(&supercar, STEER_NONE);
             }
@@ -144,6 +174,7 @@ void supercar_init(supercar_t* car){
     car->propulsion_motor_ctrl.name = PROPULSION_MOTOR_NAME;
     car->steering_motor_ctrl.name = STEERING_MOTOR_NAME;
     car->cfg.max_speed = 50;
+    car->cfg.delta_speed = 10;
     car->cfg.mode_input_pin = GPIO_MODE_SELECTOR_IN;
     car->cfg.mode_output_pin = GPIO_MODE_SELECTOR_OUT;
     car->cfg.power_output_pin = GPIO_POWER_OUT;
@@ -271,6 +302,17 @@ void supercar_stop(supercar_t* car){
     brushed_motor_stop(propulsion);
     xSemaphoreGive(propulsion->mutex);
 }
+
+
+void supercar_set_max_speed(supercar_t* car, int max_speed){
+    int old_max_speed = car->cfg.max_speed;
+    car->cfg.max_speed = max(0, min(max_speed, 100));
+    ESP_LOGD(TAG, "Car setting up new max speed : %d -> %d", old_max_speed, car->cfg.max_speed);
+    if(car->propulsion_motor_ctrl.start_flag){
+        supercar_throttle(car, car->cfg.max_speed);
+    }
+}
+
 
 /**
  * @brief The main entry of this example

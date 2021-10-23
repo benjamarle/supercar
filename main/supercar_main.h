@@ -74,6 +74,7 @@ typedef struct {
 
     struct {
         int max_speed;
+        int delta_speed;
         int mode_input_pin;
         int mode_output_pin;
         int power_output_pin;
@@ -90,6 +91,8 @@ void supercar_power(supercar_t* car, bool power);
 void supercar_start(supercar_t* car);
 
 void supercar_stop(supercar_t* car);
+
+void supercar_set_max_speed(supercar_t* car, int max_speed);
 
 void supercar_toggle_mode(supercar_t* car);
 
