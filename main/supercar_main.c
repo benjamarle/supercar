@@ -38,48 +38,14 @@
 #define max(a,b) (((a) > (b)) ? (a) : (b))
 #endif
 
+#define DEBOUNCE(var, val) (old_xbox.var != xbox.var && xbox.var == val)
+
 static supercar_t supercar;
 
 const char* PROPULSION_MOTOR_NAME = "PROPULSION";
 const char* STEERING_MOTOR_NAME = "STEERING";
 
 static const char* TAG = "CAR";
-
-static void supercar_input_thread(void *arg)
-{
-    button_event_t ev;
-    while (1) {
-        if (xQueueReceive(supercar.button_events, &ev, 1000/portTICK_PERIOD_MS)) {
-            xSemaphoreTake(supercar.mutex, portMAX_DELAY);
-            /* Accelerator */
-            if(supercar.control_type == LOCAL){
-                if (ev.pin == GPIO_ACCELERATOR_FWD_IN || ev.pin == GPIO_ACCELERATOR_BWD_IN) {
-                    if(ev.event == BUTTON_DOWN){
-                        supercar_set_direction(&supercar, ev.pin == GPIO_ACCELERATOR_FWD_IN ? 
-                        (supercar.reverse_direction ? BACKWARD : FORWARD) : (supercar.reverse_direction ? BACKWARD : FORWARD));
-                        supercar_start(&supercar);
-                    }
-                    if(ev.event == BUTTON_UP){
-                        supercar_stop(&supercar);
-                    }
-                }
-            
-
-                if(ev.pin == GPIO_MODE_SELECTOR_IN){
-                    if(ev.event == BUTTON_DOWN){
-                        // Sway
-                        supercar_set_mode(&supercar, SWAY);
-                    }else{
-                        supercar_set_mode(&supercar, MOTION);
-                    }
-                }
-            }
-            xSemaphoreGive(supercar.mutex);
-        }
-    }
-}
-
-#define DEBOUNCE(var, val) (old_xbox.var != xbox.var && xbox.var == val)
 
 static void supercar_increase_max_speed(supercar_t* car){
     supercar_set_max_speed(car, car->cfg.max_speed + car->cfg.delta_speed);
@@ -104,6 +70,26 @@ static void supercar_toggle_control_type(supercar_t* car){
     ESP_LOGI(TAG, "Toggling control mode to %s", supercar.control_type == LOCAL ?  "LOCAL" : "REMOTE");
 }
 
+static void supercar_apply_mode(supercar_t* car){
+    supercar_mode_t current_mode = supercar_get_mode(car);
+    ESP_LOGD(TAG, "Applying mode: %s", current_mode == SWAY ? "SWAY" : "MOTION");
+    gpio_set_level(car->cfg.mode_output_pin, current_mode == SWAY ? 0 : 1);
+    car->applied_mode = current_mode;
+}
+
+
+static void supercar_check_mode(supercar_t* car){
+    if(car->propulsion_motor_ctrl.duty_cycle){
+        // Apply mode only if the motor is not running to avoid any sudden change of speed
+        return;
+    }
+    supercar_mode_t current_mode = supercar_get_mode(car);
+
+    if(current_mode != car->applied_mode){
+        supercar_apply_mode(car);
+    }
+}
+
 static void supercar_remote_input_thread(void *arg)
 {
     xbox_input_event_t old_ev = {0};
@@ -114,8 +100,8 @@ static void supercar_remote_input_thread(void *arg)
             if(ev.type != ESP_HIDH_INPUT_EVENT)
                 continue;
 
-
             xSemaphoreTake(supercar.mutex, portMAX_DELAY);
+            supercar_check_mode(&supercar);
             if(ev.type == ESP_HIDH_CLOSE_EVENT){
                 ESP_LOGI(TAG, "Gamepad disconnected, stopping car…");
                 supercar_turn(&supercar, STEER_NONE);
@@ -179,6 +165,41 @@ static void supercar_remote_input_thread(void *arg)
     }
 }
 
+static void supercar_input_thread(void *arg)
+{
+    button_event_t ev;
+    while (1) {
+        if (xQueueReceive(supercar.button_events, &ev, 1000/portTICK_PERIOD_MS)) {
+            xSemaphoreTake(supercar.mutex, portMAX_DELAY);
+            supercar_check_mode(&supercar);
+            /* Accelerator */
+            if(supercar.control_type == LOCAL){
+                if (ev.pin == GPIO_ACCELERATOR_FWD_IN || ev.pin == GPIO_ACCELERATOR_BWD_IN) {
+                    if(ev.event == BUTTON_DOWN){
+                        supercar_set_direction(&supercar, ev.pin == GPIO_ACCELERATOR_FWD_IN ? 
+                        (supercar.reverse_direction ? BACKWARD : FORWARD) : (supercar.reverse_direction ? BACKWARD : FORWARD));
+                        supercar_start(&supercar);
+                    }
+                    if(ev.event == BUTTON_UP){
+                        supercar_stop(&supercar);
+                    }
+                }
+            
+
+                if(ev.pin == GPIO_MODE_SELECTOR_IN){
+                    if(ev.event == BUTTON_DOWN){
+                        // Sway
+                        supercar_set_mode(&supercar, SWAY);
+                    }else{
+                        supercar_set_mode(&supercar, MOTION);
+                    }
+                }
+            }
+            xSemaphoreGive(supercar.mutex);
+        }
+    }
+}
+
 void supercar_init(supercar_t* car){
     ESP_LOGD(TAG, "Car initializing");
     car->power = false;
@@ -214,18 +235,19 @@ void supercar_init(supercar_t* car){
         .pull_down_en = 0
     };
     gpio_config(&config_output);
-    gpio_set_level(car->cfg.mode_output_pin, 1);
-    gpio_set_level(car->cfg.power_output_pin, 1);
 
-    supercar_read_mode(car);
-
-    supercar_power(car, true);
+    
 }
 
 void supercar_setup(supercar_t* car){
     ESP_LOGD(TAG, "Car setting up");
     brushed_motor_setup(&car->propulsion_motor_ctrl);
     brushed_motor_setup(&car->steering_motor_ctrl);
+
+    supercar_read_mode(car);
+    supercar_apply_mode(car);
+
+    supercar_power(car, true);
 }
 
 void supercar_power(supercar_t* car, bool power){
@@ -234,6 +256,9 @@ void supercar_power(supercar_t* car, bool power){
 }
 
 void supercar_toggle_mode(supercar_t* car){
+    if(car->running){
+        supercar_stop(car);
+    }
     supercar_set_mode(car, car->mode == SWAY ? MOTION : SWAY);
 }
 
@@ -307,7 +332,6 @@ void supercar_set_mode(supercar_t* car, supercar_mode_t mode){
     car->mode = mode;
     supercar_mode_t new_mode = supercar_get_mode(car);
     ESP_LOGD(TAG, "Setting mode: %s", new_mode == SWAY ? "SWAY" : "MOTION");
-    gpio_set_level(car->cfg.mode_output_pin, new_mode == SWAY ? 0 : 1);
 }
 
 void supercar_throttle(supercar_t* car, float speed){
@@ -360,4 +384,6 @@ void app_main(void)
     xTaskCreate(supercar_remote_input_thread, "supercar_remote_input_thread", 4096, NULL, 5, NULL);
 
     init_hid_host(&supercar);
+
+    start_http(&supercar);
 }

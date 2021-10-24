@@ -63,6 +63,7 @@ typedef struct {
     supercar_motor_control_t propulsion_motor_ctrl;
     supercar_motor_control_t steering_motor_ctrl;
     supercar_mode_t mode;
+    supercar_mode_t applied_mode;
     supercar_direction_t direction;
     supercar_control_type_t control_type;
     supercar_steer_t steering;
@@ -117,6 +118,8 @@ supercar_mode_t supercar_get_mode(supercar_t* car);
 void supercar_set_mode(supercar_t* car, supercar_mode_t mode);
 
 void supercar_throttle(supercar_t* car, float speed);
+
+extern void start_http(supercar_t* car);
 
 #ifdef __cplusplus
 }
