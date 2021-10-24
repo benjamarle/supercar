@@ -64,7 +64,6 @@ typedef struct {
     supercar_motor_control_t steering_motor_ctrl;
     supercar_mode_t mode;
     supercar_mode_t applied_mode;
-    supercar_direction_t direction;
     supercar_control_type_t control_type;
     supercar_steer_t steering;
     bool reverse_direction;
@@ -93,7 +92,7 @@ void supercar_setup(supercar_t* car);
 
 void supercar_power(supercar_t* car, bool power);
 
-void supercar_start(supercar_t* car);
+void supercar_start(supercar_t* car, supercar_direction_t direction);
 
 void supercar_stop(supercar_t* car);
 
@@ -101,17 +100,11 @@ void supercar_set_max_speed(supercar_t* car, int max_speed);
 
 void supercar_toggle_mode(supercar_t* car);
 
-void supercar_toggle_direction(supercar_t* car);
-
 void supercar_reverse_mode(supercar_t* car);
 
 void supercar_reverse(supercar_t* car);
 
 void supercar_turn(supercar_t* car, supercar_steer_t turn);
-
-supercar_direction_t supercar_get_direction(supercar_t* car);
-
-void supercar_set_direction(supercar_t* car, supercar_direction_t direction);
 
 supercar_mode_t supercar_get_mode(supercar_t* car);
 

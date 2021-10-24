@@ -36,7 +36,6 @@ static esp_err_t status_get_handler(httpd_req_t *req)
                     power: %s<br/>\
                     mode: %s<br/>\
                     applied_mode: %s<br/>\
-                    direction: %s<br/>\
                     control_type: %s<br/>\
                     steering: %s<br/>\
                     reverse_direction: %s<br/>\
@@ -46,7 +45,6 @@ static esp_err_t status_get_handler(httpd_req_t *req)
                     BOOL2STR(car->power),
                     supercar_get_mode(car) == MOTION ? "MOTION":"SWAY",
                     car->applied_mode == MOTION ? "MOTION":"SWAY",
-                    supercar_get_direction(car) == FORWARD ? "FORWARD" : "BACKWARD",
                     car->control_type == LOCAL ? "LOCAL":"REMOTE",
                     car->steering == STEER_NONE ? "NONE" : (car->steering == STEER_LEFT ? "LEFT" : "RIGHT"),
                     BOOL2STR(car->reverse_direction),

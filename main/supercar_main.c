@@ -126,11 +126,9 @@ static void supercar_remote_input_thread(void *arg)
             if(xbox.lt || xbox.rt){
                 supercar.control_type = REMOTE;
                 if(xbox.lt){
-                    supercar_set_direction(&supercar, BACKWARD);
-                    supercar_throttle(&supercar, xbox.lt / 1023.0f * 100.0f);
+                    supercar_throttle(&supercar, -xbox.lt / 1023.0f * 100.0f);
                 }
                 if(xbox.rt){
-                    supercar_set_direction(&supercar, FORWARD);
                     supercar_throttle(&supercar, xbox.rt / 1023.0f * 100.0f);
                 }
             }
@@ -176,9 +174,9 @@ static void supercar_input_thread(void *arg)
             if(supercar.control_type == LOCAL){
                 if (ev.pin == GPIO_ACCELERATOR_FWD_IN || ev.pin == GPIO_ACCELERATOR_BWD_IN) {
                     if(ev.event == BUTTON_DOWN){
-                        supercar_set_direction(&supercar, ev.pin == GPIO_ACCELERATOR_FWD_IN ? 
-                        (supercar.reverse_direction ? BACKWARD : FORWARD) : (supercar.reverse_direction ? BACKWARD : FORWARD));
-                        supercar_start(&supercar);
+                        supercar_direction_t direction = ev.pin == GPIO_ACCELERATOR_FWD_IN ? 
+                        (supercar.reverse_direction ? BACKWARD : FORWARD) : (supercar.reverse_direction ? BACKWARD : FORWARD);
+                        supercar_start(&supercar, direction);
                     }
                     if(ev.event == BUTTON_UP){
                         supercar_stop(&supercar);
@@ -205,7 +203,6 @@ void supercar_init(supercar_t* car){
     car->power = false;
     car->control_type = LOCAL;
     car->control_type = MOTION;
-    car->direction = FORWARD;
     car->steering = STEER_NONE;
     car->propulsion_motor_ctrl.name = PROPULSION_MOTOR_NAME;
     car->steering_motor_ctrl.name = STEERING_MOTOR_NAME;
@@ -222,7 +219,8 @@ void supercar_init(supercar_t* car){
     brushed_motor_init(&car->propulsion_motor_ctrl, MCPWM_TIMER_0, MCPWM0A, GPIO_PWM_PROPULSION_OUT, GPIO_DIR_PROPULSION_OUT);
     brushed_motor_init(&car->steering_motor_ctrl, MCPWM_TIMER_1, MCPWM1A, GPIO_PWM_STEERING_OUT, GPIO_DIR_STEERING_OUT);
 
-    car->steering_motor_ctrl.cfg.acceleration = 2.0f;
+    car->propulsion_motor_ctrl.cfg.acceleration = 2.0f;
+    car->steering_motor_ctrl.cfg.acceleration = 4.0f;
 
     car->button_events = pulled_button_init(PIN_BIT(GPIO_ACCELERATOR_FWD_IN) | PIN_BIT(GPIO_ACCELERATOR_BWD_IN) | PIN_BIT(GPIO_MODE_SELECTOR_IN), GPIO_PULLUP_ONLY);
     car->remote_events = xQueueCreate(10, sizeof(xbox_input_event_t));
@@ -234,9 +232,7 @@ void supercar_init(supercar_t* car){
         .pull_up_en = 1,
         .pull_down_en = 0
     };
-    gpio_config(&config_output);
-
-    
+    gpio_config(&config_output);    
 }
 
 void supercar_setup(supercar_t* car){
@@ -262,10 +258,6 @@ void supercar_toggle_mode(supercar_t* car){
     supercar_set_mode(car, car->mode == SWAY ? MOTION : SWAY);
 }
 
-void supercar_toggle_direction(supercar_t* car){
-    supercar_set_direction(car, car->direction == FORWARD ? BACKWARD : FORWARD);
-}
-
 void supercar_reverse_mode(supercar_t* car){
     ESP_LOGD(TAG, "Car toggling mode");
     car->reverse_mode = !car->reverse_mode;
@@ -275,15 +267,10 @@ void supercar_reverse_mode(supercar_t* car){
 void supercar_reverse(supercar_t* car){
     ESP_LOGD(TAG, "Car toggling direction");
     car->reverse_direction = !car->reverse_direction;
-    bool was_running = false;
-    if(car->running){
-        was_running = true;
-        supercar_stop(car);
-    }
-    supercar_set_direction(car, car->direction);
-
-    if(was_running ){
-        supercar_start(car);
+    supercar_motor_control_t* propulsion = &(car->propulsion_motor_ctrl);
+    if(propulsion->start_flag){
+        ESP_LOGD(TAG, "Applying opposite thrust...");
+        brushed_motor_set_speed(propulsion, -propulsion->expt);
     }
 }
 
@@ -302,26 +289,6 @@ void supercar_turn(supercar_t* car, supercar_steer_t turn){
     }
 }
 
-supercar_direction_t supercar_get_direction(supercar_t* car){
-    if(!car->reverse_direction)
-        return car->direction;
-    return car->direction == FORWARD ? BACKWARD : FORWARD;
-}
-
-void supercar_set_direction(supercar_t* car, supercar_direction_t direction){
-    supercar_motor_control_t* propulsion = &car->propulsion_motor_ctrl;
-    car->direction = direction;
-    supercar_direction_t new_direction = supercar_get_direction(car);
-    ESP_LOGD(TAG, "Setting direction: %s", new_direction == FORWARD ? "FORWARD" : "BACKWARD");
-    if(propulsion->start_flag){
-        if((propulsion->expt < 0 && new_direction == FORWARD) 
-        || (propulsion->expt > 0 && new_direction == BACKWARD)){
-            brushed_motor_set_speed(propulsion, -propulsion->expt);
-        }
-    }
-    
-}
-
 supercar_mode_t supercar_get_mode(supercar_t* car){
     if(!car->reverse_mode)
         return car->mode;
@@ -336,7 +303,7 @@ void supercar_set_mode(supercar_t* car, supercar_mode_t mode){
 
 void supercar_throttle(supercar_t* car, float speed){
     supercar_motor_control_t* propulsion = &car->propulsion_motor_ctrl;
-    brushed_motor_set_speed(propulsion, car->direction == FORWARD ? speed : -speed);
+    brushed_motor_set_speed(propulsion, speed);
     if(!car->running && speed > 0){
         ESP_LOGD(TAG, "Car running");
         car->running = true;
@@ -344,9 +311,10 @@ void supercar_throttle(supercar_t* car, float speed){
     }
 }
 
-void supercar_start(supercar_t* car){
+void supercar_start(supercar_t* car, supercar_direction_t direction){
     ESP_LOGD(TAG, "Car starting up...");
-    supercar_throttle(car, car->cfg.max_speed);
+    int speed = car->cfg.max_speed;
+    supercar_throttle(car, direction == FORWARD ? speed : -speed);
 }
 
 void supercar_stop(supercar_t* car){ 
