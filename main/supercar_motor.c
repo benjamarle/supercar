@@ -41,7 +41,7 @@ void brushed_motor_init(supercar_motor_control_t* motor_ctrl, mcpwm_timer_t pwm_
  */
 static void brushed_motor_set_duty(supercar_motor_control_t* motor_ctrl, float duty_cycle)
 {
-    ESP_LOGD(TAG, "Duty cycle [%s] : %f", motor_ctrl->name, duty_cycle);
+    ESP_LOGV(TAG, "Duty cycle [%s] : %f", motor_ctrl->name, duty_cycle);
     motor_ctrl->duty_cycle = duty_cycle;
     if(duty_cycle){
         if(duty_cycle < 0)
@@ -81,7 +81,7 @@ static void brushed_motor_ctrl_thread(void *arg){
             }else{
                 new_duty = motor->expt;
             }
-            ESP_LOGD(TAG, "Duty cycle [%s] expt %f : %f -> %f", motor->name, motor->expt, motor->duty_cycle, new_duty);
+            ESP_LOGV(TAG, "Duty cycle [%s] expt %f : %f -> %f", motor->name, motor->expt, motor->duty_cycle, new_duty);
             motor_direction_t new_direction = new_duty > 0 ? MOTOR_RIGHT : MOTOR_LEFT;
 
             if(new_direction != motor->direction){
@@ -124,8 +124,9 @@ void brushed_motor_setup(supercar_motor_control_t* motor_ctrl){
     xTaskCreatePinnedToCore(brushed_motor_ctrl_thread, "mcpwm_brushed_motor_ctrl_thread", 4096, motor_ctrl, 3, NULL, 1);
 }
 
-void brushed_motor_set_speed(supercar_motor_control_t* motor_ctrl, float speed){
-    motor_ctrl->expt = speed;
+void brushed_motor_set_speed(supercar_motor_control_t* mc, float speed){
+    ESP_LOGD(TAG, "Motor set speed [%s] : %f", mc->name, speed);
+    mc->expt = speed;
 }
 
 /**

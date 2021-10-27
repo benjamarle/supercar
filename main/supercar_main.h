@@ -33,7 +33,6 @@ extern "C" {
 #define GPIO_POWER_OUT 0
 #define GPIO_MODE_SELECTOR_OUT 4
 
-
 #define MOTOR_CTRL_MCPWM_TIMER  MCPWM_TIMER_0
 #define STEERING_SPEED 100.0f
 
@@ -48,8 +47,9 @@ typedef enum {
 } supercar_control_type_t;
 
 typedef enum {
-    FORWARD,
-    BACKWARD
+    DIRECTION_FORWARD,
+    DIRECTION_BACKWARD, 
+    DIRECTION_NONE
 } supercar_direction_t;
 
 typedef enum {
@@ -68,7 +68,7 @@ typedef struct {
     supercar_steer_t steering;
     bool reverse_direction;
     bool reverse_mode;
-    bool running;
+    supercar_direction_t running;
 
     SemaphoreHandle_t mutex;
 
