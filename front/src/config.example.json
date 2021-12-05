@@ -1,0 +1,25 @@
+{
+        "main": {
+                "max_speed":    50,
+                "delta_speed":  10,
+                "mode_input_pin":       13,
+                "mode_output_pin":      4,
+                "power_output_pin":     0,
+                "distance_threshold_forward":   4,
+                "distance_threshold_backward":  4
+        },
+        "propulsion_config":    {
+                "acceleration": 2,
+                "ctrl_period":  10,
+                "pwm_freq":     20000,
+                "pwm_pin":      21,
+                "direction_pin":        17
+        },
+        "steering_config":      {
+                "acceleration": 4,
+                "ctrl_period":  10,
+                "pwm_freq":     20000,
+                "pwm_pin":      19,
+                "direction_pin":        18
+        }
+}
