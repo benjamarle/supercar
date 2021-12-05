@@ -1,6 +1,7 @@
 #ifndef _SUPERCAR_MOTOR_H_
 #define _SUPERCAR_MOTOR_H_
 
+#include "freertos/semphr.h"
 #include "driver/mcpwm.h"
 
 #ifdef __cplusplus
@@ -25,8 +26,8 @@ typedef struct {
     /* Configurations */
     struct {
         float acceleration;         // Maximum delta per control period
-        unsigned int ctrl_period;            // Control period
-        unsigned int pwm_freq;               // MCPWM output frequency
+        int ctrl_period;            // Control period
+        int pwm_freq;               // MCPWM output frequency
         /* MCPWM Configuration */
         mcpwm_unit_t pwm_unit;
         mcpwm_timer_t pwm_timer;

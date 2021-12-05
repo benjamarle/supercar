@@ -29,6 +29,8 @@
 #include "button.h"
 #include "supercar_motor.h"
 #include "math.h"
+#include "supercar_sensor.h"
+#include "supercar_config.h"
 
 #ifndef min
 #define min(a,b) (((a) < (b)) ? (a) : (b))
@@ -199,6 +201,43 @@ static void supercar_input_thread(void *arg)
     }
 }
 
+static void supercar_distance_sensor_thread(void *arg)
+{
+    distance_sensor_report_t ev;
+    while (1) {
+        if (xQueueReceive(supercar.distance_events, &ev, 1000/portTICK_PERIOD_MS)) {
+            xSemaphoreTake(supercar.mutex, portMAX_DELAY);
+            
+            supercar.distance = (supercar_distance_sensor_t){
+                .back_left = ev.d.distance,
+                .back_right = ev.c.distance,
+                .front_left = ev.a.distance,
+                .front_right = ev.b.distance
+            };
+
+            if(supercar.running == DIRECTION_NONE || supercar.control_type != LOCAL){
+                xSemaphoreGive(supercar.mutex);
+                continue;
+            }
+
+            uint8_t distance;
+            if(supercar.running == DIRECTION_FORWARD){
+                distance = min(supercar.distance.front_left, supercar.distance.front_right);
+            }else{
+                distance = min(supercar.distance.back_left, supercar.distance.back_right);
+            }
+            if(distance <= supercar.cfg.distance_threshold_forward){
+                ESP_LOGD(TAG, "Supercar emergency stop");
+                supercar_stop(&supercar);
+                ESP_LOGD(TAG, "Supercar emergency reverse");
+                supercar_reverse(&supercar);
+            }
+
+            xSemaphoreGive(supercar.mutex);
+        }
+    }
+}
+
 void supercar_init(supercar_t* car){
     ESP_LOGD(TAG, "Car initializing");
     car->power = false;
@@ -212,6 +251,13 @@ void supercar_init(supercar_t* car){
     car->cfg.mode_input_pin = GPIO_MODE_SELECTOR_IN;
     car->cfg.mode_output_pin = GPIO_MODE_SELECTOR_OUT;
     car->cfg.power_output_pin = GPIO_POWER_OUT;
+    car->cfg.distance_threshold_backward = 4;
+    car->cfg.distance_threshold_forward = 4;
+    car->distance.back_left = 25;
+    car->distance.front_left = 25;
+    car->distance.back_right = 25;
+    car->distance.front_right = 25;
+    
     car->reverse_direction = false;
     car->reverse_mode = false;
     car->running = DIRECTION_NONE;
@@ -225,6 +271,7 @@ void supercar_init(supercar_t* car){
 
     car->button_events = pulled_button_init(PIN_BIT(GPIO_ACCELERATOR_FWD_IN) | PIN_BIT(GPIO_ACCELERATOR_BWD_IN) | PIN_BIT(GPIO_MODE_SELECTOR_IN), GPIO_PULLUP_ONLY);
     car->remote_events = xQueueCreate(10, sizeof(xbox_input_event_t));
+    car->distance_events = xQueueCreate(10, sizeof(distance_sensor_report_t));
 
     gpio_config_t config_output = {
         .intr_type = GPIO_INTR_DISABLE,
@@ -349,12 +396,18 @@ void app_main(void)
     /* Initialize peripherals and modules */
     supercar_init(&supercar);
     supercar_setup(&supercar);
+
+   
     
     /* Motor expectation wave generate thread */
-    xTaskCreate(supercar_input_thread, "supercar_input_thread", 4096, NULL, 5, NULL);
-    xTaskCreate(supercar_remote_input_thread, "supercar_remote_input_thread", 4096, NULL, 5, NULL);
+    xTaskCreatePinnedToCore(supercar_input_thread, "supercar_input_thread", 4096, NULL, 5, NULL, 0);
+    xTaskCreatePinnedToCore(supercar_remote_input_thread, "supercar_remote_input_thread", 4096, NULL, 5, NULL, 0);
+    xTaskCreatePinnedToCore(supercar_distance_sensor_thread, "supercar_distance_sensor_thread", 4096, NULL, 5, NULL, 0);
 
     init_hid_host(&supercar);
 
-    start_http(&supercar);
+    init_distance_sensor_rx(&supercar);
+
+    start_rest_main(&supercar);
+    ESP_ERROR_CHECK(supercar_config_read(&supercar));
 }

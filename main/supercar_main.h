@@ -12,6 +12,8 @@
 #define _SUPERCAR_MAIN_H_
  
 #include "supercar_motor.h"
+#include "freertos/semphr.h"
+#include "supercar_sensor.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +34,8 @@ extern "C" {
 #define GPIO_MODE_SELECTOR_IN 13
 #define GPIO_POWER_OUT 0
 #define GPIO_MODE_SELECTOR_OUT 4
+
+#define GPIO_DISTANCE_SENSOR_IN 22
 
 #define MOTOR_CTRL_MCPWM_TIMER  MCPWM_TIMER_0
 #define STEERING_SPEED 100.0f
@@ -59,6 +63,23 @@ typedef enum {
 } supercar_steer_t;
 
 typedef struct {
+    uint8_t front_left;
+    uint8_t front_right;
+    uint8_t back_left;
+    uint8_t back_right;
+} supercar_distance_sensor_t;
+
+typedef struct {
+        int max_speed;
+        int delta_speed;
+        int mode_input_pin;
+        int mode_output_pin;
+        int power_output_pin;
+        int distance_threshold_forward;
+        int distance_threshold_backward;
+} supercar_config_t;
+
+typedef struct {
     bool power;
     supercar_motor_control_t propulsion_motor_ctrl;
     supercar_motor_control_t steering_motor_ctrl;
@@ -69,20 +90,17 @@ typedef struct {
     bool reverse_direction;
     bool reverse_mode;
     supercar_direction_t running;
+    supercar_distance_sensor_t distance;
+
 
     SemaphoreHandle_t mutex;
 
     /* Handles */
     QueueHandle_t button_events;
     QueueHandle_t remote_events;
+    QueueHandle_t distance_events;
 
-    struct {
-        int max_speed;
-        int delta_speed;
-        int mode_input_pin;
-        int mode_output_pin;
-        int power_output_pin;
-    } cfg;
+    supercar_config_t cfg;
 
 } supercar_t;
 
@@ -112,7 +130,9 @@ void supercar_set_mode(supercar_t* car, supercar_mode_t mode);
 
 void supercar_throttle(supercar_t* car, float speed);
 
-extern void start_http(supercar_t* car);
+extern void start_rest_main(supercar_t* car);
+
+extern void init_distance_sensor_rx(supercar_t* car);
 
 #ifdef __cplusplus
 }

@@ -7,6 +7,15 @@
         "freertos.h": "c",
         "semphr.h": "c",
         "esp_attr.h": "c",
-        "*.inc": "c"
+        "*.inc": "c",
+        "task.h": "c",
+        "nvs.h": "c",
+        "gpio.h": "c",
+        "esp_system.h": "c",
+        "log.h": "c",
+        "supercar_config.h": "c",
+        "json.h": "c",
+        "cjson.h": "c",
+        "*.ipp": "c"
     }
 }
